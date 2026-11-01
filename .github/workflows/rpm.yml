@@ -1,0 +1,76 @@
+name: Build RPM (desktop)
+
+# Builds the Electron desktop app as an x86_64 RPM and publishes it
+# as a GitHub Release in this fork, so a Fedora host only has to run
+# `sudo dnf install ./termix_linux_x64.rpm`.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/rpm.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  build-rpm:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: ".nvmrc"
+          cache: "npm"
+
+      # electron-builder calls fpm, and fpm calls rpmbuild.
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y rpm
+
+      - name: Install dependencies
+        run: |
+          npm ci
+          npm install --force @rollup/rollup-linux-x64-gnu
+
+      - name: Build app
+        run: npm run build
+
+      - name: Package RPM
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: >
+          npx electron-builder --linux rpm --x64 --publish never
+          -c.rpm.artifactName='termix_linux_x64.${ext}'
+
+      - name: Show result
+        run: |
+          ls -lh release/*.rpm
+          rpm -qip release/termix_linux_x64.rpm
+          rpm -qpR release/termix_linux_x64.rpm
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: termix_linux_x64_rpm
+          path: release/termix_linux_x64.rpm
+          retention-days: 30
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          TAG="rpm-v${VERSION}-${GITHUB_RUN_NUMBER}"
+          gh release create "$TAG" release/termix_linux_x64.rpm \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "Termix ${VERSION} RPM (build ${GITHUB_RUN_NUMBER})" \
+            --notes "Desktop RPM for Fedora x86_64. Install: sudo dnf install ./termix_linux_x64.rpm"
