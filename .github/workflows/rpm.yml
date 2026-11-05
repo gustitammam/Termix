@@ -21,6 +21,9 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
+          # Fork main only adds this workflow, so build the upstream tag directly.
+          repository: Termix-SSH/Termix
+          ref: v26.11.0
           fetch-depth: 1
 
       - name: Setup Node.js
